@@ -36,7 +36,7 @@ perf_latency: spsc_latency.o $(LIB_NAME)
 	$(CC) -o $@ $^ $(PERF_LDFLAGS)
 
 perf_throughput: spsc_throughput.o $(LIB_NAME)
-	$(CC) -o $@ $^ $(PERF_LDFLAGS)
+	$(CC) -D_GNU_SOURCE -o $@ $^ $(PERF_LDFLAGS)
 
 $(TEST_APP_NAME): $(TEST_APP_OBJ) $(LIB_NAME)
 	$(CC) -o $@ $^ $(TEST_LDFLAGS)

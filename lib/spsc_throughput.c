@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "spsc.h"
 
 #include <stdio.h>
@@ -5,10 +6,17 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sched.h>
+#include <string.h>
+#include <errno.h>
 
 #define BUFFER_SIZE 4 * 1024 * 1024
 #define NUM_MESSAGES 500000000
 
+void pperror(const char *s);
+void pperror(const char *s) {
+    fprintf(stderr, "%s: %s\n", s, strerror(errno));
+}
 
 void publish(char* ring_name)
 {
@@ -25,7 +33,6 @@ void publish(char* ring_name)
 		else
 		{
 			retry_count++;
-			usleep(1);
 		}
 	}
 
@@ -59,10 +66,21 @@ void subscribe(char* ring_name)
 	printf("Message count: %ld\n", count);
 	printf("Elapsed: %.2fs\n", elapsed);
 	printf("Messages per second: %.0f\n", count / elapsed);
+	printf("Throughput: %.4fGiB/s\n", (((float) count * (float) sizeof(buf)) / elapsed / 1024.0 / 1024.0 / 1024.0));
 }
 
 int main(int argc, char** argv)
 {
+	if (argc != 3)
+    {
+        fprintf(stderr, "Usage: %s <producer_core> <subscriber_core>\n", argv[0]);
+        return 1;
+    }
+
+	int producer_core = atoi(argv[1]);
+    int subscriber_core = atoi(argv[2]);
+	fprintf(stderr, "producer_core=%d, subscriber_core=%d\n", producer_core, subscriber_core);
+
 	char ring_name[] = "/tmp/ringXXXXXX";
 	if (mkstemp(ring_name) == -1)
 	{
@@ -79,11 +97,27 @@ int main(int argc, char** argv)
 	else if (pid == 0)
 	{
 		// child process
+		cpu_set_t cpuset;
+		CPU_ZERO(&cpuset);
+		CPU_SET(producer_core, &cpuset);
+		if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
+			pperror("sched_setaffinity() failed for producer");
+			return 1;
+		}
+
 		sleep(1);
 		publish(ring_name);
 	} 
 	else 
 	{
+		cpu_set_t cpuset;
+		CPU_ZERO(&cpuset);
+		CPU_SET(subscriber_core, &cpuset);
+		if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
+			pperror("sched_setaffinity() failed for subscriber");
+			return 1;
+		}
+
 		subscribe(ring_name);
 		while(wait(NULL) > 0);
 	}
